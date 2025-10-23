@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Unreachable Moon</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-image: url('night.jpg');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+        canvas {
+            display: block;
+        }
+        #start-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8); 
+            display: flex;
+            flex-direction: column; 
+            justify-content: center;
+            align-items: flex-start; 
+            font-size: 28px; 
+            color: white;
+            font-family: 'Helvetica Neue', Arial, sans-serif; 
+            cursor: pointer;
+            z-index: 100;
+            padding-left: 10%; 
+            box-sizing: border-box; 
+        }
+        
+        .intro-line {
+            margin: 10px 0;
+            white-space: nowrap; 
+            overflow: hidden; 
+            min-height: 1.2em; 
+            width: 0; 
+        }
+        
+        .intro-line.typing {
+            border-right: 3px solid white; 
+            animation: blink-cursor 0.75s step-end infinite;
+        }
+
+        @keyframes blink-cursor {
+            from, to { border-color: transparent }
+            50% { border-color: white; }
+        }
+
+        .intro-line.finished {
+            border-right: none; 
+            width: auto !important; 
+        }
+        
+        #click-prompt {
+            font-size: 24px;
+            margin-top: 50px;
+            align-self: center; 
+            animation: blink-prompt 1.5s step-end infinite;
+            display: none; 
+            padding-left: 0; 
+        }
+        
+        @keyframes blink-prompt {
+            from, to { opacity: 0 }
+            50% { opacity: 1 }
+        }
+
+        #epilogue-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            display: none; 
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-size: 28px;
+            color: white;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            text-align: center;
+            z-index: 101;
+            opacity: 0;
+            transition: opacity 2s ease-in-out;
+            cursor: pointer;
+        }
+        #epilogue-overlay p {
+            margin: 10px 0;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="start-overlay">
+        <p class="intro-line" data-text="나에게는 달을 잡고자 하는 꿈이 있었습니다."></p>
+        <p class="intro-line" data-text="사람들은 하늘이 아닌, 발밑을 보라고 했습니다."></p>
+        <p class="intro-line" data-text="무모하고 허황된 짓이라며 비웃었습니다."></p>
+        <p class="intro-line" data-text="하지만 나는 멈출 수 없었습니다."></p>
+        <p class="intro-line" data-text="저기, 달이 있으니까요."></p>
+        <p id="click-prompt">[ 클릭하여 나의 탑을 쌓아보세요 ]</p>
+    </div>
+
+    <div id="epilogue-overlay">
+        <p>탑은 무너졌습니다.</p>
+        <p>사람들의 말이 맞았을지도 모릅니다.</p>
+        <br>
+        <p>하지만,</p>
+        <p>오늘 밤 가장 높이 솟아올랐던 그 순간은</p>
+        <p>분명히 달에 닿았습니다.</p>
+        <br>
+        <p>그것으로 충분합니다.</p>
+        <p id="click-restart" style="font-size: 24px; margin-top: 50px;">[ 다시, 꿈을 꾸기 위하여 ]</p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+
+    <script>
+        const { Engine, Render, Runner, World, Bodies, Body, Events, Mouse, MouseConstraint, Composite } = Matter;
+
+        const engine = Engine.create();
+        const world = engine.world;
+        const render = Render.create({
+            element: document.body,
+            engine: engine,
+            options: {
+                width: window.innerWidth,
+                height: window.innerHeight,
+                wireframes: false,
+                background: 'transparent' 
+            }
+        });
+        Render.run(render);
+        const runner = Runner.create();
+        Runner.run(runner, engine);
+
+        const ground = Bodies.rectangle(window.innerWidth / 2, window.innerHeight + 40, window.innerWidth + 200, 100, { 
+            isStatic: true, 
+            angle: 0, 
+            render: { fillStyle: '#2c1e1e' },
+            canWin: true 
+        });
+        const leftWall = Bodies.rectangle(-25, window.innerHeight / 2, 50, window.innerHeight, { isStatic: true });
+        const rightWall = Bodies.rectangle(window.innerWidth + 25, window.innerHeight / 2, 50, window.innerHeight, { isStatic: true });
+
+        const moon = Bodies.circle(window.innerWidth / 2, window.innerHeight * 0.15, 50, { 
+            isStatic: true,
+            isSensor: true, 
+            render: {
+                sprite: {
+                    texture: 'moon.png' 
+                }
+            },
+            isMoon: true 
+        });
+        
+        const junkImageUrls = [
+            'plank.png',
+            'ladder.png',
+            'chair.png',
+            'frame.png',
+            'box.png'
+        ];
+
+        const scale = 1.5;
+
+        function createJunk(x, y) {
+            const index = Math.floor(Math.random() * junkImageUrls.length);
+            const texture = junkImageUrls[index];
+            let newJunk;
+
+            const options = {
+                restitution: 0, 
+                friction: 0.7, 
+                frictionStatic: 1.2, 
+                density: 0.005, 
+                render: { 
+                    sprite: { texture: texture }
+                },
+                isJunk: true, 
+                canWin: false 
+            };
+
+            switch (index) {
+                case 0: // plank
+                    newJunk = Bodies.rectangle(x, y, 120 * scale, 20 * scale, options);
+                    break;
+                case 1: // ladder
+                    newJunk = Bodies.rectangle(x, y, 80 * scale, 100 * scale, options);
+                    break;
+                case 2: // chair (단순 사각형으로 안정화)
+                    newJunk = Bodies.rectangle(x, y, 80 * scale, 80 * scale, options);
+                    break;
+                case 3: // frame
+                    newJunk = Bodies.rectangle(x, y, 80 * scale, 100 * scale, options);
+                    break;
+                case 4: // box
+                    newJunk = Bodies.rectangle(x, y, 60 * scale, 60 * scale, options);
+                    break;
+                default:
+                    newJunk = Bodies.rectangle(x, y, 80 * scale, 80 * scale, options);
+            }
+            return newJunk;
+        }
+        
+        const junkPile = [];
+        for (let i = 0; i < 15; i++) {
+            const x = Math.random() * window.innerWidth; 
+            const y = window.innerHeight - 200 - (i * 100); 
+            junkPile.push(createJunk(x, y));
+        }
+
+        World.add(world, [ground, leftWall, rightWall, moon, ...junkPile]);
+
+        const mouse = Mouse.create(render.canvas);
+        const mouseConstraint = MouseConstraint.create(engine, {
+            mouse: mouse,
+            constraint: { stiffness: 0.2, render: { visible: false } }
+        });
+        World.add(world, mouseConstraint);
+        render.mouse = mouse;
+
+        let draggedBody = null; 
+
+        Events.on(mouseConstraint, 'startdrag', (event) => {
+            draggedBody = event.body;
+        });
+        Events.on(mouseConstraint, 'enddrag', (event) => {
+            draggedBody = null;
+        });
+
+        window.addEventListener('wheel', (event) => {
+            if (draggedBody) {
+                const rotation = event.deltaY > 0 ? 0.01 : -0.01; 
+                Body.rotate(draggedBody, rotation);
+            }
+        });
+
+        const synth = new Tone.Synth().toDestination();
+        const chimeSynth = new Tone.Synth({ oscillator: { type: "fmsine" }, envelope: { attack: 0.01, decay: 0.5, release: 2 } }).toDestination();
+        
+        const notes = ['C4', 'E4', 'G4', 'B4', 'C5', 'E5', 'G5', 'B5', 'C6'];
+        let maxTowerHeight = 0;
+        let soundMilestone = 0;
+        
+        let gameEnded = false;
+        const epilogueOverlay = document.getElementById('epilogue-overlay');
+
+        function getHighestJunkY() {
+            let highestY = window.innerHeight;
+            junkPile.forEach(junk => {
+                if (!junk.isStatic && junk.position.y < highestY) {
+                    highestY = junk.position.y;
+                }
+            });
+            return highestY;
+        }
+
+        Events.on(engine, 'beforeUpdate', (event) => {
+            if (gameEnded) return; 
+
+            const highestY = getHighestJunkY();
+            const currentHeight = window.innerHeight - highestY;
+
+            const windThreshold = window.innerHeight * 0.5; 
+            if (currentHeight > windThreshold) {
+                const windStrength = (currentHeight - windThreshold) / (window.innerHeight - windThreshold);
+                engine.world.gravity.x = Math.sin(engine.timing.timestamp * 0.001) * 0.005 * windStrength;
+            } else {
+                engine.world.gravity.x = 0; 
+            }
+
+            const soundThreshold = window.innerHeight * 0.1; 
+            const milestoneStep = 50; 
+
+            if (currentHeight > maxTowerHeight) {
+                maxTowerHeight = currentHeight; 
+            }
+
+            if (maxTowerHeight > soundMilestone + milestoneStep && maxTowerHeight > soundThreshold) {
+                const noteIndex = Math.floor(soundMilestone / milestoneStep) % notes.length;
+                synth.triggerAttackRelease(notes[noteIndex], "8n", Tone.now());
+                soundMilestone += milestoneStep;
+            }
+        });
+        
+        function triggerEpilogue() {
+            if (gameEnded) return; 
+            gameEnded = true;
+
+            engine.world.gravity.x = 0;
+            chimeSynth.triggerAttackRelease("C6", "2s");
+            
+            // ⭐ 1초간 성공의 순간 유지 후, 탑을 무너뜨립니다.
+            setTimeout(() => {
+                // 강력한 바람을 불게 해서 탑을 무너뜨립니다.
+                engine.world.gravity.x = Math.random() > 0.5 ? 0.3 : -0.3; // 좌우 중 한 방향으로 강한 중력 적용
+                engine.world.gravity.y = 1; // 일반 중력 유지 (혹은 더 강하게 1.5 등)
+
+                // 3초 후 물리 엔진 정지 및 아웃트로 표시
+                setTimeout(() => {
+                    Runner.stop(runner); 
+                    
+                    epilogueOverlay.style.display = 'flex';
+                    setTimeout(() => {
+                        epilogueOverlay.style.opacity = 1; 
+                    }, 100);
+
+                    epilogueOverlay.addEventListener('click', () => {
+                        window.location.reload();
+                    });
+                }, 3000); // 3초 후에 아웃트로 멘트 표시 (탑 무너지는 시간)
+
+            }, 1000); // 1초 후에 탑 무너뜨리기 시작
+        }
+
+        Events.on(engine, 'collisionStart', (event) => {
+            if (gameEnded) return;
+
+            const pairs = event.pairs;
+            for (let i = 0; i < pairs.length; i++) {
+                const pair = pairs[i];
+
+                if (pair.bodyA.canWin || pair.bodyB.canWin) {
+                    if (!pair.bodyA.isStatic) pair.bodyA.canWin = true;
+                    if (!pair.bodyB.isStatic) pair.bodyB.canWin = true;
+                }
+                
+                let junkBody = null;
+                if (pair.bodyA.isMoon && pair.bodyB.isJunk) {
+                    junkBody = pair.bodyB;
+                } else if (pair.bodyB.isMoon && pair.bodyA.isJunk) {
+                    junkBody = pair.bodyA;
+                }
+
+                if (junkBody && junkBody !== draggedBody && junkBody.canWin) {
+                    triggerEpilogue();
+                    break; 
+                }
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            window.location.reload();
+        });
+
+        const startOverlay = document.getElementById('start-overlay');
+        
+        function startGame() {
+            Tone.start();
+            startOverlay.style.display = 'none';
+        }
+
+        window.addEventListener('load', () => {
+            const lines = document.querySelectorAll('#start-overlay .intro-line');
+            const prompt = document.getElementById('click-prompt');
+            const typingSpeed = 100; 
+            const lineDelay = 500; 
+
+            let lineIndex = 0;
+            
+            function typeLine() {
+                if (lineIndex >= lines.length) {
+                    prompt.style.display = 'block';
+                    startOverlay.addEventListener('click', startGame, { once: true });
+                    return;
+                }
+
+                const currentLine = lines[lineIndex];
+                const text = currentLine.getAttribute('data-text');
+                let charIndex = 0;
+                currentLine.innerHTML = ''; 
+                currentLine.classList.add('typing'); 
+
+                function typeChar() {
+                    if (charIndex < text.length) {
+                        currentLine.innerHTML += text.charAt(charIndex);
+                        currentLine.style.width = 'auto'; 
+                        charIndex++;
+                        setTimeout(typeChar, typingSpeed);
+                    } else {
+                        currentLine.classList.remove('typing'); 
+                        currentLine.classList.add('finished'); 
+                        lineIndex++;
+                        setTimeout(typeLine, lineDelay);
+                    }
+                }
+                
+                typeChar(); 
+            }
+
+            typeLine(); 
+        });
+
+    </script>
+</body>
+</html>
+
